@@ -1,0 +1,288 @@
+---
+title: "Reanalysis of the effect of Mst-1 overexpression in young and old mice"
+author: "Mark Ziemann"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+    fig_width: 7
+    fig_height: 7
+theme: cosmo
+---
+
+Source: https://github.com/markziemann/mst1_reanalysis
+
+# Introduction
+
+```{r,packages}
+
+suppressPackageStartupMessages({
+    library("reshape2")
+    library("DESeq2")
+    library("gplots")
+    library("mitch")
+    library("eulerr")
+    library("kableExtra")
+    library("beeswarm")
+})
+
+```
+
+## Import DE data
+
+
+```{r,importdata}
+
+you <- read.table("Mst1TG_young_deseq.tsv",header=TRUE,sep="\t")
+
+old <- read.table("Mst1TG_old_deseq.tsv",header=TRUE,sep="\t")
+
+you_up <- rownames(subset(you,log2FoldChange > 0 & padj < 0.05))
+you_dn <- rownames(subset(you,log2FoldChange < 0 & padj < 0.05))
+
+old_up <- rownames(subset(old,log2FoldChange > 0 & padj < 0.05))
+old_dn <- rownames(subset(old,log2FoldChange < 0 & padj < 0.05))
+
+```
+
+
+## Euler diagram
+
+```{r,euler1}
+
+par(mar=c(2,2,2,2))
+
+v0 <- list("young up"=you_up, 
+  "young dn"=you_dn,
+  "old up"=old_up,
+  "old dn"=old_dn)
+
+plot(euler(v0),quantities = TRUE, edges = "gray", main="effect of Mst-1 overexpression")
+
+```
+
+## Mitch
+
+First fetch genesets.
+
+```{r,geneset1}
+
+if  (!file.exists("mouse_msigdb_reactome_2022-02-16.gmt")) {
+  download.file("http://ziemann-lab.net/public/msigdb_mouse/mouse_msigdb_reactome_2022-02-16.gmt",
+    destfile="mouse_msigdb_reactome_2022-02-16.gmt")
+}
+genesets <- gmt_import("mouse_msigdb_reactome_2022-02-16.gmt")
+names(genesets) <- gsub("REACTOME_","",names(genesets))
+names(genesets) <- gsub("_"," ",names(genesets))
+
+```
+
+Now set up the gene table `gt`.
+
+```{r,gt}
+
+gt <- as.data.frame(unique(rownames(old) ,rownames(you)))
+gt$gene <- sapply(strsplit(gt[,1]," "),"[[",2)
+
+```
+
+Now execute mitch analysis.
+
+```{r,mitch1}
+
+m1 <- mitch_import(list("young"=you,"old"=old), DEtype="deseq2",geneTable=gt)
+
+mres1 <- mitch_calc(m1, genesets, priority="effect")
+
+head(mres1$enrichment_result,20) %>% 
+  kbl(caption = "Top gene pathway differences caused by Mst-1 overexpression") %>%
+  kable_paper("hover", full_width = F)
+
+```
+
+Scatterplot
+
+```{r,scatter1,fig.height=9, fig.width=9}
+
+res <- mres1$enrichment_result
+
+sig <- subset(res,p.adjustMANOVA < 0.01)
+
+plot(res$s.young,res$s.old,bty="none",
+  xlim=c(-1,1), ylim=c(-1,1),
+  xlab="young",ylab="old",
+  main="enrichment score, effect of Mst-1 overexpression") 
+
+abline(v=0,lty=2)
+abline(h=0,lty=2)
+
+points(sig$s.young, sig$s.old, pch=19,col="black")
+
+message("downregulated gene sets")
+
+dn <- subset(sig,s.young < -0.5 & s.old < -0.5)$set
+dn <- unname(sapply(X=dn,function(x) {substring(x, first=1, last=50) } ))
+dn
+
+message("upregulated gene sets")
+
+up <- subset(sig,s.young > 0.5 & s.old > 0.5)$set
+up <- unname(sapply(X=up,function(x) {substring(x, first=1, last=45) } ))
+up
+
+points(-0.75,-0.75,cex=30,col="red")
+
+pos <- data.frame(-seq(0.35,1,0.05))
+pos$x <- 0.05
+
+text(0.35,-0.3,"DOWNREGULATED",cex=1,col="red")
+text(pos[,2],pos[,1], head(dn,  nrow(pos)) , pos=4,cex=0.8)
+
+points(0.75,0.75,cex=30,col="blue")
+
+pos <- data.frame(seq(0.9,0.25,-0.05))
+pos$x <- -1
+
+text(-0.75,0.95,"UPREGULATED",cex=1,col="blue")
+text(pos[,2],pos[,1], head(up,  nrow(pos)) , pos=4,cex=0.8)
+
+```
+
+## Get counts for heatmaps
+
+Need to read these in from the kallisto output, clean up the rownames and then cleanup the
+column names.
+
+Then combine the 2 tables into a single one, then calculate RPM.
+
+```{r,counts1}
+
+tmp <- read.table("3col_young.tsv.gz",header=F)
+x <- as.matrix(acast(tmp, V2~V1, value.var="V3", fun.aggregate = sum))
+x <- as.data.frame(x)
+accession <- sapply((strsplit(rownames(x),"\\|")),"[[",2)
+symbol<-sapply((strsplit(rownames(x),"\\|")),"[[",6)
+x$geneid <- paste(accession,symbol)
+xy <- aggregate(. ~ geneid,x,sum)
+rownames(xy) <- xy$geneid
+xy$geneid = NULL
+colnames(xy) <- gsub("D","Mst1tg",colnames(xy))
+colnames(xy) <- gsub("E","wt",colnames(xy))
+colnames(xy) <- paste(colnames(xy) ,"_young",sep="")
+rpmy <- xy / colSums(xy) * 1000000
+rpmy <- rpmy[which(rowMeans(xy) > 10),]
+
+tmp <- read.table("3col_old.tsv.gz",header=F)
+x <- as.matrix(acast(tmp, V2~V1, value.var="V3", fun.aggregate = sum))
+x <- as.data.frame(x)
+accession <- sapply((strsplit(rownames(x),"\\|")),"[[",2)
+symbol<-sapply((strsplit(rownames(x),"\\|")),"[[",6)
+x$geneid <- paste(accession,symbol)
+xo <- aggregate(. ~ geneid,x,sum)
+rownames(xo) <- xo$geneid
+xo$geneid = NULL
+xo <-  xo[,grep("Gal",colnames(xo),invert=TRUE)] 
+colnames(xo) <- sapply(strsplit(colnames(xo),"\\."),"[[",1)
+colnames(xo) <- paste(colnames(xo) ,"_old",sep="")
+rpmo <- xo / colSums(xo) * 1000000
+rpmo <- rpmo[which(rowMeans(xo) > 10),]
+
+xx <- cbind(xy,xo)
+rpm <- xx / colSums(xx) * 1000000 
+head(rpm)
+dim(rpm)
+rpm <- rpm[which(rowMeans(xx) > 10),]
+dim(rpm)
+
+```
+
+## Heatmaps
+
+Here, I'm going to create heatmaps for some particular gene sets.
+
+* Respiratory electron transport
+
+* Collagen biosynthesis
+
+* mtDNA repair
+
+* Mitochondrial RNA binding
+
+They may look a bit messy because combining separate experiments can be problematic.
+
+```{r,heatmap1}
+
+colfunc <- colorRampPalette(c("blue", "white", "red"))
+
+rpm_genes <- sapply(strsplit(rownames(rpm)," "),"[[",2)
+
+SETS <- unique( c( names(genesets)[grep("RESPIRATORY",names(genesets))],
+    names(genesets)[grep("COLLAGEN",names(genesets))], 
+    names(genesets)[grep("REPAIR",names(genesets))],
+    names(genesets)[grep("MITOCHONDRIAL",names(genesets))] ) )
+
+myheatmap <- function(SET) {
+    message(SET)
+    geneset_members <- genesets[[which(names(genesets)==SET)]]
+
+    if ( length(which(rpm_genes %in% geneset_members)) > 10 ) {
+
+        rpm_subset <- rpm[which(rpm_genes %in% geneset_members),]
+
+        gnames <- sapply(strsplit(rownames(rpm_subset)," "),"[[",2)
+        gnames[which(duplicated(gnames) )] <- paste( gnames[which(duplicated(gnames) )] , "2" )
+        rownames(rpm_subset) <- gnames
+        heatmap.2(as.matrix(rpm_subset), trace="none", scale="row", 
+            col=colfunc(25) , dendrogram="none", margins = c(10,15))
+        mtext(SET)
+    }
+}
+
+sapply(SETS,myheatmap)
+
+```
+
+They may look a bit messy because combining separate experiments can be problematic.
+
+```{r,heatmap2,fig.height=7,fig.width=7}
+
+rpmy_genes <- sapply(strsplit(rownames(rpmy)," "),"[[",2)
+rpmo_genes <- sapply(strsplit(rownames(rpmo)," "),"[[",2)
+
+myheatmap2 <- function(SET) {
+    message(SET)
+    geneset_members <- genesets[[which(names(genesets)==SET)]]
+    if ( length(which(rpmy_genes %in% geneset_members)) > 10 ) {
+        rpm_subset <- rpmy[which(rpmy_genes %in% geneset_members),]
+        gnames <- sapply(strsplit(rownames(rpm_subset)," "),"[[",2)
+        gnames[which(duplicated(gnames) )] <- paste( gnames[which(duplicated(gnames) )] , "2" )
+        rownames(rpm_subset) <- gnames
+        heatmap.2(as.matrix(rpm_subset), trace="none", scale="row",
+            col=colfunc(25) , dendrogram="none", margins = c(10,18) )
+        mtext(SET)
+    }
+    if ( length(which(rpmo_genes %in% geneset_members)) > 10 ) {
+        rpm_subset <- rpmo[which(rpmo_genes %in% geneset_members),]
+        gnames <- sapply(strsplit(rownames(rpm_subset)," "),"[[",2)
+        gnames[which(duplicated(gnames) )] <- paste( gnames[which(duplicated(gnames) )] , "2" )
+        rownames(rpm_subset) <- gnames
+        heatmap.2(as.matrix(rpm_subset), trace="none", scale="row",
+            col=colfunc(25) , dendrogram="none", margins = c(10,18))
+        mtext(SET)
+    }
+}
+
+sapply(SETS,myheatmap2)
+
+
+```
+
+## Session information
+
+```{r,sessioninfo}
+
+sessionInfo()
+
+```
