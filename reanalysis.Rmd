@@ -198,6 +198,41 @@ dim(rpm)
 
 ```
 
+## Mito encoded genes
+
+```{r,mitobar}
+
+mty <- rpmy[grep("mt-",rownames(rpmy)),]
+mtywt <- mty[,grep("wt",colnames(mty))]
+mtytg <- mty[,grep("tg",colnames(mty))]
+
+mto <- rpmo[grep("mt-",rownames(rpmo)),]
+mtowt <- mto[,grep("wt",colnames(mto))]
+mtotg <- mto[,grep("Tg",colnames(mto))]
+
+myboxplot <- function(GNAME) {
+
+dat <- list("young wt"=as.numeric(mtywt[GNAME,]),
+    "young tg"=as.numeric(mtytg[GNAME,]) ,
+    "old wt"=as.numeric(mtowt[GNAME,]),
+    "old tg"=as.numeric(mtotg[GNAME,]) )
+
+boxplot(dat, main=GNAME, col="white", 
+  log="y", ylab="RPM (log scale)")
+
+beeswarm(dat,add=TRUE,pch=19,cex=1.2)
+}
+
+GNAMES <- intersect( rownames(mto) , rownames(mty) )
+
+myboxplot(GNAMES[1])
+
+par(mfrow=c(2,2))
+
+sapply(GNAMES,myboxplot)
+
+```
+
 ## Heatmaps
 
 Here, I'm going to create heatmaps for some particular gene sets.
