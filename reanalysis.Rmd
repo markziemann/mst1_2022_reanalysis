@@ -26,6 +26,7 @@ suppressPackageStartupMessages({
     library("eulerr")
     library("kableExtra")
     library("beeswarm")
+    library(ggplot2)
 })
 
 ```
@@ -172,6 +173,7 @@ colnames(xy) <- gsub("D","Mst1tg",colnames(xy))
 colnames(xy) <- gsub("E","wt",colnames(xy))
 colnames(xy) <- paste(colnames(xy) ,"_young",sep="")
 rpmy <- xy / colSums(xy) * 1000000
+rpmy2 <- rpmy
 rpmy <- rpmy[which(rowMeans(xy) > 10),]
 
 tmp <- read.table("3col_old.tsv.gz",header=F)
@@ -187,10 +189,12 @@ xo <-  xo[,grep("Gal",colnames(xo),invert=TRUE)]
 colnames(xo) <- sapply(strsplit(colnames(xo),"\\."),"[[",1)
 colnames(xo) <- paste(colnames(xo) ,"_old",sep="")
 rpmo <- xo / colSums(xo) * 1000000
+rpmo2 <- rpmo
 rpmo <- rpmo[which(rowMeans(xo) > 10),]
 
 xx <- cbind(xy,xo)
 rpm <- xx / colSums(xx) * 1000000 
+rpm2 <- rpm
 head(rpm)
 dim(rpm)
 rpm <- rpm[which(rowMeans(xx) > 10),]
@@ -200,13 +204,15 @@ dim(rpm)
 
 ## Mito encoded genes
 
-```{r,mitobar}
+```{r,mitobar1}
 
-mty <- rpmy[grep("mt-",rownames(rpmy)),]
+mty <- rpmy2[grep(" mt-",rownames(rpmy2)),]
+mty <- mty[grep("mt-T",rownames(mty),invert=TRUE),]
 mtywt <- mty[,grep("wt",colnames(mty))]
 mtytg <- mty[,grep("tg",colnames(mty))]
 
-mto <- rpmo[grep("mt-",rownames(rpmo)),]
+mto <- rpmo2[grep(" mt-",rownames(rpmo2)),]
+mto <- mto[grep("mt-T",rownames(mto),invert=TRUE),]
 mtowt <- mto[,grep("wt",colnames(mto))]
 mtotg <- mto[,grep("Tg",colnames(mto))]
 
@@ -230,6 +236,107 @@ myboxplot(GNAMES[1])
 par(mfrow=c(2,2))
 
 sapply(GNAMES,myboxplot)
+
+```
+
+Try with ggplot.
+
+```{r,mitobar2}
+
+mty <- rpmy2[grep(" mt-",rownames(rpmy2)),]
+mtywt <- mty[,grep("wt",colnames(mty))]
+mtywtl <- melt(mtywt)
+mtywtl$gene <- rep(rownames(mtywt),ncol(mtywt))
+mtywtl <- mtywtl[,c(3,1,2)]
+colnames(mtywtl) <- c("gene","sample","quant")
+mtywtl$sample <- "wt"
+
+mtytg <- mty[,grep("tg",colnames(mty))]
+mtytgl <- melt(mtytg)
+mtytgl$gene <- rep(rownames(mtytg),ncol(mtytg))
+mtytgl <- mtytgl[,c(3,1,2)]
+colnames(mtytgl) <- c("gene","sample","quant")
+mtytgl$sample <- "tg"
+
+mtl <- rbind(mtywtl, mtytgl)
+
+ggplot(mtl, aes(x = factor(gene), y = quant, fill = factor(sample))) + 
+  geom_boxplot() 
+
+mtl <- mtl[grep("mt-T",mtl$gene,invert=TRUE),]
+
+ggplot(mtl, aes(x = factor(gene), y = quant, fill = factor(sample))) +
+  geom_boxplot()
+
+```
+
+Need to show the RQ only.
+
+```{r,mitobar3, fig.height=7, fig.width=5}
+
+mty <- rpmy2[grep(" mt-",rownames(rpmy2)),]
+mty <- mty[grep("mt-T",rownames(mty),invert=TRUE),]
+mtywt <- mty[,grep("wt",colnames(mty))]
+mtywt_means <- rowMeans(mtywt)
+mtytg <- mty[,grep("tg",colnames(mty))]
+mtytg_means <- rowMeans(mtytg)
+mtywt <- mtywt / mtywt_means
+mtytg <- mtytg / mtywt_means
+
+mtywtl <- melt(mtywt)
+mtywtl$gene <- rep(rownames(mtywt),ncol(mtywt))
+mtywtl <- mtywtl[,c(3,1,2)]
+colnames(mtywtl) <- c("gene","sample","quant")
+mtywtl$sample <- "wt"
+
+mtytgl <- melt(mtytg)
+mtytgl$gene <- rep(rownames(mtytg),ncol(mtytg))
+mtytgl <- mtytgl[,c(3,1,2)]
+colnames(mtytgl) <- c("gene","sample","quant")
+mtytgl$sample <- "tg"
+
+mtl <- rbind(mtywtl, mtytgl)
+
+mtl$gene <- sapply(strsplit(mtl$gene , " "),"[[",2)
+
+ggplot(mtl, aes(x = factor(gene), y = quant, fill = factor(sample))) +
+  coord_flip() +
+  geom_boxplot() +
+  ggtitle("young") +
+  theme_bw() +
+  theme(text = element_text(size = 20))  
+
+mto <- rpmo2[grep(" mt-",rownames(rpmo2)),]
+mto <- mto[grep("mt-T",rownames(mto),invert=TRUE),]
+mtowt <- mto[,grep("wt",colnames(mto))]
+mtowt_means <- rowMeans(mtowt)
+mtotg <- mto[,grep("Tg",colnames(mto))]
+mtotg_means <- rowMeans(mtotg)
+mtowt <- mtowt / mtowt_means
+mtotg <- mtotg / mtowt_means
+
+mtowtl <- melt(mtowt)
+mtowtl$gene <- rep(rownames(mtowt),ncol(mtowt))
+mtowtl <- mtowtl[,c(3,1,2)]
+colnames(mtowtl) <- c("gene","sample","quant")
+mtowtl$sample <- "wt"
+
+mtotgl <- melt(mtotg)
+mtotgl$gene <- rep(rownames(mtotg),ncol(mtotg))
+mtotgl <- mtotgl[,c(3,1,2)]
+colnames(mtotgl) <- c("gene","sample","quant")
+mtotgl$sample <- "tg"
+
+mtl <- rbind(mtowtl, mtotgl)
+
+mtl$gene <- sapply(strsplit(mtl$gene , " "),"[[",2)
+
+ggplot(mtl, aes(x = factor(gene), y = quant, fill = factor(sample))) +
+  coord_flip() +
+  geom_boxplot() +
+  ggtitle("old") +
+  theme_bw() +
+  theme(text = element_text(size = 20))
 
 ```
 
