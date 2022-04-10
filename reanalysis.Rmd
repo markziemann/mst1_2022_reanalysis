@@ -95,7 +95,14 @@ Now execute mitch analysis.
 
 m1 <- mitch_import(list("young"=you,"old"=old), DEtype="deseq2",geneTable=gt)
 
+cor(m1,method="pearson")
+cor(m1,method="spearman")
+
 mres1 <- mitch_calc(m1, genesets, priority="effect")
+
+cor(mres1$enrichment_result$s.young, mres1$enrichment_result$s.old,method="pearson")
+cor(mres1$enrichment_result$s.young, mres1$enrichment_result$s.old,method="spearman")
+
 
 head(mres1$enrichment_result,20) %>% 
   kbl(caption = "Top gene pathway differences caused by Mst-1 overexpression") %>%
